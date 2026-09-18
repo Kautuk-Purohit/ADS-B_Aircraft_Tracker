@@ -1,7 +1,8 @@
-/* This is a combination of the load_iq and mag functions in the python model.
-First module in order of pipeline */
+/* First module in order of pipeline.
+This is a combination of the load_iq and mag functions in the python model.
+ */
 
-module envelope_detector #(
+module magnitude_calculator #(
     //parameters
 ) (
     input logic [7:0] i_val,

@@ -1,10 +1,11 @@
-/* This code takes an input magnitude signal, compares it against a threshold, and then outputs a single bit.
+/* Second module in pipeline.
+This code takes an input magnitude signal, compares it against a threshold, and then outputs a single bit.
 If the signal is loud enough, then output 1, otherwise if it's too quiet then output a 0 */
 
-module threshold_binarizer #(
+module threshold_checker #(
     parameter int threshold
 )(
-    input logic [8:0] magnitude,
+    input logic [7:0] magnitude,
     output logic valid
 );
     always_comb begin

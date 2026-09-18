@@ -34,8 +34,8 @@ def find_preambles(mag):
     """
     pattern = [1, 0, 1, 0, 0 , 0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 0]
 
-    working_indicies = []
     total = []
+    working_indicies = []
 
     for i in range(0, len(mag)-15):
         product_list = pattern * mag[i:i+16] # Compute element-wise multiplication of the pattern and current magnitude 16-element set

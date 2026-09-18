@@ -2,11 +2,11 @@ module threshold_binarizer_tb #(
     parameter threshold_check = 50
 );
 
-    logic [8:0] magnitude;
+    logic [7:0] magnitude;
     logic valid;
 
     threshold_binarizer #(
-        .threshold(50)
+        .threshold(threshold_check)
     ) dut (
         .magnitude(magnitude),
         .valid(valid)
