@@ -1,10 +1,8 @@
-/* First module in order of pipeline.
+/* 1st module in pipeline
 This is a combination of the load_iq and mag functions in the python model.
  */
 
-module magnitude_calculator #(
-    //parameters
-) (
+module magnitude_calculator (
     input logic [7:0] i_val,
     input logic [7:0] q_val,
 
@@ -39,7 +37,6 @@ module magnitude_calculator #(
 
     //For hardware optimized values, alpha = 1.0, beta = 0.25
     assign magnitude = max + (min >> 2);
-    
+
 
 endmodule
-
