@@ -1,13 +1,20 @@
 /* Full synthesizable top level: raw serial bytes in (from the PC, over
-   UART) all the way to parsed aircraft fields out. Same wiring proven in
-   full_pipeline_gapped_tb.sv, just with uart_rx + iq_deinterleaver +
-   magnitude_calculator prepended as the real first stages instead of a
-   testbench array.
+   UART, via pc_sender.py) all the way to parsed aircraft fields sent back
+   out (over UART, via message_tx_framer, read on the PC by pc_receiver.py).
+   Same decode wiring proven in full_pipeline_gapped_tb.sv, with uart_rx +
+   iq_deinterleaver + magnitude_calculator prepended as the real first
+   stages, and message_tx_framer appended as the real last stage, instead
+   of a testbench array and a $display.
 
    magnitude_calculator is pure combinational logic (no clock), so its
    output is already settled by the time iq_deinterleaver's iq_valid pulse
    reaches preamble_detector/ppm_decoder on that same cycle -- iq_valid is
-   used directly as sample_valid, no extra staging needed. */
+   used directly as sample_valid, no extra staging needed.
+
+   The parsed-field output ports (fields_valid, df, ca, ...) are kept as
+   real top-level ports alongside tx, not just internal wires to the
+   framer -- useful for wiring an LED or 7-segment display straight to them
+   later without having to touch this file again. */
 
 module adsb_top #(
     parameter int CLK_FREQ_HZ = 100_000_000,
@@ -15,7 +22,8 @@ module adsb_top #(
 )(
     input  logic clk,
     input  logic reset,
-    input  logic rx,          // serial line from the PC
+    input  logic rx,          // serial line from the PC (raw I/Q in)
+    output logic tx,          // serial line to the PC (decoded fields out)
 
     output logic         fields_valid,
     output logic [4:0]   df,
@@ -83,6 +91,14 @@ module adsb_top #(
         .fields_valid(fields_valid),
         .df(df), .ca(ca), .icao(icao), .tc(tc), .is_velocity(is_velocity),
         .ew_velocity(ew_velocity), .ns_velocity(ns_velocity), .ground_speed(ground_speed)
+    );
+
+    message_tx_framer #(.CLK_FREQ_HZ(CLK_FREQ_HZ), .BAUD_RATE(BAUD_RATE)) u_framer (
+        .clk(clk), .reset(reset),
+        .fields_valid(fields_valid),
+        .df(df), .ca(ca), .icao(icao), .tc(tc), .is_velocity(is_velocity),
+        .ew_velocity(ew_velocity), .ns_velocity(ns_velocity), .ground_speed(ground_speed),
+        .tx(tx)
     );
 
 endmodule

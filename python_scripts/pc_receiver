@@ -1,0 +1,136 @@
+#!/usr/bin/env python3
+"""
+Reads the 14-byte frames sent by message_tx_framer.sv (over uart_tx, out of
+adsb_top's tx pin) and prints each decoded ADS-B message in human-readable
+form. This is the other half of the loop pc_sender.py opens: pc_sender.py
+pushes raw captured I/Q bytes in, this script reads the parsed aircraft
+fields back out.
+
+Frame layout (must match message_tx_framer.sv's header comment exactly):
+    byte 0:     sync marker, 0xAA
+    byte 1:     df
+    byte 2:     ca
+    byte 3-5:   icao       (24-bit, MSB-first)
+    byte 6:     tc
+    byte 7:     is_velocity
+    byte 8-9:   ew_velocity  (16-bit signed, MSB-first)
+    byte 10-11: ns_velocity  (16-bit signed, MSB-first)
+    byte 12-13: ground_speed (16-bit unsigned, MSB-first)
+
+Sync/resync: every frame starts with 0xAA, so this script reads one byte at
+a time looking for that marker, then reads the next 13 bytes as the body.
+It never assumes byte 0 of what it happens to read first is a real frame
+start -- if the port is opened mid-frame, or a byte is dropped, the next
+0xAA it sees puts it back in sync within at most one frame.
+
+Usage:
+    python3 pc_receiver.py --port /dev/ttyUSB1
+    python3 pc_receiver.py --port COM5 --baud 3000000
+"""
+
+import argparse
+import sys
+
+try:
+    import serial
+except ImportError:
+    print("This needs pyserial: pip install pyserial", file=sys.stderr)
+    sys.exit(1)
+
+SYNC_BYTE = 0xAA
+FRAME_BODY_LEN = 13  # everything after the sync byte
+
+
+def to_signed16(hi: int, lo: int) -> int:
+    val = (hi << 8) | lo
+    if val & 0x8000:
+        val -= 0x10000
+    return val
+
+
+def decode_frame(body: bytes) -> dict:
+    df = body[0]
+    ca = body[1]
+    icao = (body[2] << 16) | (body[3] << 8) | body[4]
+    tc = body[5]
+    is_velocity = bool(body[6])
+    ew_velocity = to_signed16(body[7], body[8])
+    ns_velocity = to_signed16(body[9], body[10])
+    ground_speed = (body[11] << 8) | body[12]
+    return {
+        "df": df,
+        "ca": ca,
+        "icao": icao,
+        "tc": tc,
+        "is_velocity": is_velocity,
+        "ew_velocity": ew_velocity,
+        "ns_velocity": ns_velocity,
+        "ground_speed": ground_speed,
+    }
+
+
+def format_message(fields: dict) -> str:
+    base = (f"DF={fields['df']:2d} CA={fields['ca']} ICAO={fields['icao']:06X} "
+            f"TC={fields['tc']:2d}")
+    if fields["is_velocity"]:
+        return (f"{base}  velocity: EW={fields['ew_velocity']:+5d} "
+                f"NS={fields['ns_velocity']:+5d} speed={fields['ground_speed']:4d}")
+    return f"{base}  (non-velocity message, no speed fields populated)"
+
+
+def read_frames(port_name: str, baud: int, count: int, quiet: bool) -> None:
+    # timeout=0.1 matters here, not just as a nicety: with no timeout,
+    # pyserial's default is to block forever, so reading the 13 body bytes
+    # after a sync byte would hang across a gap left by a dropped/truncated
+    # frame -- and worse, once data resumes (the *next* frame's bytes), the
+    # blocking read would silently splice them onto the leftover bytes of
+    # the broken one and decode the mixed result as if it were one valid
+    # frame. Confirmed this exact failure by testing against a real
+    # (virtual) serial loopback with a deliberately truncated frame before
+    # adding the timeout. With the timeout, a short read is detected
+    # (len(body) != FRAME_BODY_LEN below) and those stale bytes are
+    # discarded instead of merged into whatever arrives next.
+    with serial.Serial(port_name, baudrate=baud, bytesize=8, parity='N', stopbits=1,
+                        timeout=0.1) as ser:
+        received = 0
+        while count == 0 or received < count:
+            b = ser.read(1)
+            if len(b) == 0:
+                continue  # timeout with nothing read, keep waiting
+            if b[0] != SYNC_BYTE:
+                continue  # not a sync byte, keep scanning
+
+            body = ser.read(FRAME_BODY_LEN)
+            if len(body) != FRAME_BODY_LEN:
+                if not quiet:
+                    print(f"warning: frame cut short after sync "
+                          f"({len(body)}/{FRAME_BODY_LEN} body bytes), resyncing",
+                          file=sys.stderr)
+                continue
+
+            fields = decode_frame(body)
+            received += 1
+            print(format_message(fields))
+
+
+def main():
+    p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    p.add_argument("--port", required=True, help="serial port, e.g. /dev/ttyUSB1 or COM5")
+    p.add_argument("--baud", type=int, default=3_000_000,
+                    help="must match uart_tx's BAUD_RATE parameter (default 3000000)")
+    p.add_argument("--count", type=int, default=0,
+                    help="stop after this many frames (default: run forever)")
+    p.add_argument("--quiet", action="store_true", help="suppress resync warnings")
+    args = p.parse_args()
+
+    try:
+        read_frames(args.port, args.baud, args.count, args.quiet)
+    except KeyboardInterrupt:
+        print("\nstopped.", file=sys.stderr)
+    except serial.SerialException as e:
+        print(f"Couldn't open '{args.port}': {e}", file=sys.stderr)
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()
