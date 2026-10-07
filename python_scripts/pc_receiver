@@ -79,17 +79,6 @@ def format_message(fields: dict) -> str:
 
 
 def read_frames(port_name: str, baud: int, count: int, quiet: bool) -> None:
-    # timeout=0.1 matters here, not just as a nicety: with no timeout,
-    # pyserial's default is to block forever, so reading the 13 body bytes
-    # after a sync byte would hang across a gap left by a dropped/truncated
-    # frame -- and worse, once data resumes (the *next* frame's bytes), the
-    # blocking read would silently splice them onto the leftover bytes of
-    # the broken one and decode the mixed result as if it were one valid
-    # frame. Confirmed this exact failure by testing against a real
-    # (virtual) serial loopback with a deliberately truncated frame before
-    # adding the timeout. With the timeout, a short read is detected
-    # (len(body) != FRAME_BODY_LEN below) and those stale bytes are
-    # discarded instead of merged into whatever arrives next.
     with serial.Serial(port_name, baudrate=baud, bytesize=8, parity='N', stopbits=1,
                         timeout=0.1) as ser:
         received = 0
