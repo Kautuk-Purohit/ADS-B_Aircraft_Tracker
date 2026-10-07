@@ -11,7 +11,7 @@ covers a fraction of that -- the math doesn't work, not a code problem. At
 slower), which is fine for what this proves: that the FPGA correctly
 decodes real captured ADS-B data, not that it runs at live line-rate.
 
-The FPGA side never needs to be told to slow down -- rf_receiver.sv and
+The FPGA side never needs to be told to slow down; rf_receiver.sv and
 everything downstream of it runs on a 100MHz clock, vastly faster than any
 UART bit rate, so every byte gets fully processed long before the next one
 arrives. No flow control, no buffering, no backpressure needed.
@@ -47,13 +47,6 @@ def stream_file(port_name: str, baud: int, file_path: str, loop: bool, quiet: bo
         print(f"Warning: '{file_path}' has an odd number of bytes ({len(data)}); "
               f"the last byte has no I/Q partner and iq_deinterleaver will hold "
               f"it until the next run's first byte arrives.", file=sys.stderr)
-
-    # opened once and kept open across every pass -- reopening the port between
-    # passes (as an earlier version of this script did) toggles DTR/RTS and can
-    # glitch a stray bit onto the line right at the pass boundary, corrupting
-    # the first byte or two of the next pass. Confirmed by testing --loop
-    # against a real serial loopback: reopening every pass failed a byte
-    # comparison at the boundary, keeping the port open across passes did not.
     with serial.Serial(port_name, baudrate=baud, bytesize=8, parity='N', stopbits=1) as ser:
         pass_num = 0
         while True:
